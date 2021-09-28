@@ -46,6 +46,14 @@ onT = 0.200
 # final list of choices to choose next stimuli with bias for
 # the preceding letter
 percentageSamples = 50 # samples percentage needed in %
+percentageFollowed = 50 # percentage of targets that should follow the pAlpha
+probFollowed = percentageFollowed/100.0
+ratio = probFollowed/(1-probFollowed)
+(numTrue, numFalse) = (ratio).as_integer_ratio()
+followedBin = [True]*numTrue
+followedBin += [False]*numFalse # final bin to determine with selected probability
+                                # for the target to follow the selected alphabet
+
 frSample = percentageSamples/100.0
 numSample = int(ceil(24*frSample/(1-frSample)))
 alphaChoices = [pAlpha]*numSample
@@ -54,9 +62,11 @@ alphaChoices += alpha
 # 3) Set experiment parameters (to be entered by setter again)
 expData = {
     'Date of Experiment': data.getDateStr(),
+    'Deterministic': True,
     'Name of Subject': 'Subject_1',
     'Duration of Experiment': 300
 }
+det = expData['Deterministic']
 # dataLabels = [
 #     'Date of Experiment', 
 #     'Name of Subject', 
@@ -82,9 +92,11 @@ makedirs(DATA_DIR, exist_ok=True)
 
 def getFileName(name: str, date: str) -> str:
     '''
-    Return unique filename from given subject name and date of experiment
+    Return unique filename from given subject name, preceding alphabet, \n
+    target alphabet, whether the exp was deterministic and date/time of experiment
     '''
-    return '{}_Pr_{}_Tr_{}_{}'.format(name, pAlpha, tAlpha, date)
+    return '{}_Pr_{}_Tr_{}_{}_{}'.format(name, pAlpha, tAlpha, 
+                                        'Det' if det else 'Prob', date)
 
 # 5) method to return random next letter to be displayed
 def getNextLetter(old: str, fixedOld: str, fixedNew: str, choices: Sequence[str]) -> str:
@@ -101,10 +113,25 @@ def getNextLetter(old: str, fixedOld: str, fixedNew: str, choices: Sequence[str]
                 If old == fixedNew returns fixedNew, otherwise\n
                 a random one from choices
     '''
-    if old == fixedOld:
+    follow = False
+
+    # get whether to follow or not if exp is probabilistic
+    if not det:
+        follow = nrand.choice(followedBin)
+
+    # if deterministic or followed selected, return the target
+    if old == fixedOld and (det or follow):
+        return fixedNew
+    
+    # get a random alphabet
+    alpha = nrand.choice(choices)
+    
+    # return the target if it is the deterministic previous alphabet
+    if alpha == fixedOld:
         return fixedNew
 
-    return nrand.choice(choices)
+    # else just simply return the random alphabet
+    return alpha
 
 # 6) method to listen to keypress and log timestamps accordingly,
 #   also provide feedback of registered keypress to use subject
@@ -179,6 +206,7 @@ expDialog = gui.DlgFromDict(expData,
 if expDialog.OK:
     expData['filename'] = getFileName(expData['Name of Subject'], expData['Date of Experiment'])
     expDuration = expData['Duration of Experiment']
+    det = expData['Deterministic']
 else:
     print('Experiment cancelled before starting. Exiting...')
     core.quit()
@@ -281,29 +309,42 @@ win.close()
 
 diffs = []
 
+# make this True/False whether you want the missed key presses to be
+# removed from the saved and plotted data or not
+removeMissed = False
+
+# structures for data to be saved and plotted
+keyPressedSave = []
+targetPresentedSave = []
+
 for i in range(len(targetPresentedTimes)):
     if keyPressedTimes[i] == -1: # missed this one
-        keyPressedTimes[i] = 0
-        targetPresentedTimes[i]=7
-    diffs.append(round(abs(targetPresentedTimes[i]-keyPressedTimes[i]), 3))
+        if removeMissed:
+            continue
+        keyPressedSave.append(0)
+        targetPresentedSave.append(7)
+    else:
+        keyPressedSave.append(keyPressedTimes[i])
+        targetPresentedSave.append(targetPresentedTimes[i])
+    diffs.append(round(abs(targetPresentedSave[-1]-keyPressedSave[-1]), 3))
 
 titles = 'Presented time(s),Pressed time(s),Difference(s)\n'
 
 with open(DATA_DIR+'/'+getFileName(expData['Name of Subject'], expData['Date of Experiment'])+'.csv', 'w') as df:
     df.write(titles)
-    for i in range(len(targetPresentedTimes)):
-        df.write(str(targetPresentedTimes[i])+','+str(keyPressedTimes[i])+','+str(diffs[i])+'\n')
+    for i in range(len(targetPresentedSave)):
+        df.write(str(targetPresentedSave[i])+','+str(keyPressedSave[i])+','+str(diffs[i])+'\n')
 
 try:
     plt.figure()
-    plt.scatter([i for i in range(1, len(targetPresentedTimes)+1)], diffs)
+    plt.scatter([i+1 for i in range(len(targetPresentedSave))], diffs)
     # plt.plot([i for i in range(1, len(targetPresentedTimes)+1)], diffs, '-')
     plt.ylabel('Difference between keypress and\nactual presentation of stimuli (seconds)')
     plt.xlabel('Trial Number')
     plt.title('Subject response times vs trial number', fontweight='bold')
     plt.grid()
     ax = plt.gca()
-    ax.set_xticks([i for i in range(len(targetPresentedTimes)+1)])
+    ax.set_xticks([i+1 for i in range(len(targetPresentedSave))])
     plt.show()
 except Exception as e:
     print('An unexpected error occured while plotting! Try plotting manually\n')
