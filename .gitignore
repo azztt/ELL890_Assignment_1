@@ -127,3 +127,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# generated data folder (comment the below line to push experiment
+# data to the remote repository)
+experiment_data/
